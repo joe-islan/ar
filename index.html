@@ -215,6 +215,8 @@
                 arjsScript.onload = function() {
                     // Criar dinamicamente a cena AR depois que os scripts foram carregados
                     createARScene();
+                    // Carregar HTML2Canvas para capacidade de captura de tela
+                    loadHTML2Canvas();
                 };
             };
         }
@@ -223,7 +225,7 @@
             // Criar a cena AR dinamicamente
             const arScene = document.createElement('a-scene');
             arScene.setAttribute('embedded', '');
-            arScene.setAttribute('arjs', 'trackingMethod: best; debugUIEnabled: false;');
+            arScene.setAttribute('arjs', 'sourceType: webcam; trackingMethod: best; debugUIEnabled: false;');
             arScene.setAttribute('vr-mode-ui', 'enabled: false');
             arScene.className = 'ar-scene';
 
@@ -235,33 +237,62 @@
             assets.appendChild(gifImg);
             arScene.appendChild(assets);
 
+            // MUDANÇA IMPORTANTE: Adicionar marcador para detecção de superfície
+            const marker = document.createElement('a-marker-camera');
+            marker.setAttribute('preset', 'hiro');
+            marker.setAttribute('type', 'pattern');
+            marker.id = 'ar-marker';
+            
+            // ALTERNATIVA: Se quiser detecção de superfície em vez de marcador específico
+            // const marker = document.createElement('a-entity');
+            // marker.setAttribute('camera', '');
+            
+            arScene.appendChild(marker);
+
             // Criar container do GIF
             const gifContainer = document.createElement('a-entity');
             gifContainer.id = 'gif-container';
+            
+            // MUDANÇA IMPORTANTE: Posicionar o GIF em relação à câmera
+            gifContainer.setAttribute('position', '0 0 -1.5');
 
             // Criar plano do GIF
             const gifPlane = document.createElement('a-plane');
             gifPlane.id = 'gif-plane';
             gifPlane.setAttribute('position', '0 0 0');
-            gifPlane.setAttribute('rotation', '-90 0 0');
             gifPlane.setAttribute('width', '1');
             gifPlane.setAttribute('height', '1');
             gifPlane.setAttribute('material', 'shader: flat; src: #gif-texture; transparent: true;');
-            gifPlane.setAttribute('visible', 'true');
+            gifPlane.setAttribute('look-at', '[camera]');  // MUDANÇA: Fazer o GIF sempre olhar para a câmera
             
             gifContainer.appendChild(gifPlane);
+            
+            // MUDANÇA: Adicionar o GIF container à cena, não ao marcador
             arScene.appendChild(gifContainer);
-
-            // Criar camera AR
-            const camera = document.createElement('a-entity');
-            camera.setAttribute('camera', '');
-            arScene.appendChild(camera);
 
             // Adicionar a cena ao body
             document.body.appendChild(arScene);
 
-            // Inicializar os controles para manipulação do GIF
-            setTimeout(initControls, 1000);
+            // MUDANÇA: Verificar quando a cena AR estiver pronta
+            arScene.addEventListener('loaded', function() {
+                document.querySelector('.info').textContent = 'AR carregado! Aponte para uma superfície.';
+                console.log('AR Scene loaded');
+                // Inicializar os controles para manipulação do GIF
+                initControls();
+            });
+            
+            // Adicionando um evento para o GIF quando aparecer
+            arScene.addEventListener('markerFound', function() {
+                document.querySelector('.info').textContent = 'Marcador encontrado! O GIF está visível.';
+                console.log('Marker found');
+            });
+        }
+        
+        // Função para carregar HTML2Canvas (para captura de tela)
+        function loadHTML2Canvas() {
+            const html2canvasScript = document.createElement('script');
+            html2canvasScript.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
+            document.body.appendChild(html2canvasScript);
         }
     </script>
 
@@ -293,7 +324,10 @@
             // Função para rotacionar o GIF
             function updateRotation() {
                 currentRotation += 45; // Rota 45 graus cada vez
-                gifPlane.setAttribute('rotation', `-90 0 ${currentRotation}`);
+                if (gifPlane) {
+                    const currentRotationAttr = gifPlane.getAttribute('rotation') || { x: 0, y: 0, z: 0 };
+                    gifPlane.setAttribute('rotation', `${currentRotationAttr.x} ${currentRotationAttr.y} ${currentRotation}`);
+                }
             }
             
             // Função para tirar foto
@@ -311,33 +345,32 @@
                 // Pequeno atraso para garantir que os elementos estejam escondidos
                 setTimeout(() => {
                     try {
-                        // Usar html2canvas como alternativa se a funcionalidade canvas do A-Frame falhar
-                        html2canvas(document.body).then(canvas => {
-                            // Converter para URL de dados
-                            const dataURL = canvas.toDataURL('image/png');
-                            
-                            // Criar um link para download
-                            const link = document.createElement('a');
-                            link.href = dataURL;
-                            link.download = 'ar-gif-photo.png';
-                            link.click();
-                            
-                            // Mostrar os controles novamente
-                            infoElement.style.display = 'block';
-                            buttonsElement.style.display = 'flex';
-                            controlsElement.style.display = 'flex';
-                            
-                            // Feedback visual
-                            infoElement.textContent = 'Foto salva!';
-                            setTimeout(() => {
-                                infoElement.textContent = 'Mova a câmera para detectar uma superfície. O GIF aparecerá!';
-                            }, 2000);
-                        });
+                        // Usar html2canvas se disponível
+                        if (typeof html2canvas === 'function') {
+                            html2canvas(document.body).then(canvas => {
+                                // Converter para URL de dados
+                                const dataURL = canvas.toDataURL('image/png');
+                                
+                                // Criar um link para download
+                                const link = document.createElement('a');
+                                link.href = dataURL;
+                                link.download = 'ar-gif-photo.png';
+                                link.click();
+                                
+                                // Feedback visual
+                                infoElement.textContent = 'Foto salva!';
+                                setTimeout(() => {
+                                    infoElement.textContent = 'Mova a câmera para detectar uma superfície. O GIF aparecerá!';
+                                }, 2000);
+                            });
+                        } else {
+                            alert("Captura de tela não disponível. Verifique se html2canvas foi carregado.");
+                        }
                     } catch (error) {
                         console.error("Erro ao capturar foto:", error);
                         alert("Não foi possível tirar a foto. Tente novamente.");
-                        
-                        // Mostrar os controles novamente em caso de erro
+                    } finally {
+                        // Mostrar os controles novamente
                         infoElement.style.display = 'block';
                         buttonsElement.style.display = 'flex';
                         controlsElement.style.display = 'flex';
@@ -349,90 +382,79 @@
             function resetGif() {
                 currentScale = 1;
                 currentRotation = 0;
-                gifPlane.setAttribute('scale', '1 1 1');
-                gifPlane.setAttribute('rotation', '-90 0 0');
-                gifContainer.setAttribute('position', '0 0 0');
+                if (gifPlane) {
+                    gifPlane.setAttribute('scale', '1 1 1');
+                    gifPlane.setAttribute('rotation', '0 0 0');
+                }
+                if (gifContainer) {
+                    gifContainer.setAttribute('position', '0 0 -1.5');
+                }
             }
             
-            // Evento para quando um marcador de superfície é detectado
-            document.addEventListener('arjs-nft-loaded', () => {
-                document.querySelector('.info').textContent = 'Superfície detectada! O GIF está visível.';
+            // Adicionar event listeners aos botões se existirem
+            if (scaleUpBtn) scaleUpBtn.addEventListener('click', () => updateScale(0.2));
+            if (scaleDownBtn) scaleDownBtn.addEventListener('click', () => updateScale(-0.2));
+            if (rotateBtn) rotateBtn.addEventListener('click', updateRotation);
+            if (takePhotoBtn) takePhotoBtn.addEventListener('click', takePhoto);
+            if (resetBtn) resetBtn.addEventListener('click', resetGif);
+
+            // MUDANÇA: Implementação simplificada para arrastar o GIF
+            document.addEventListener('touchmove', function(e) {
+                if (e.touches.length === 1) {
+                    // Mover o GIF com base no movimento do dedo
+                    const deltaX = e.touches[0].movementX * 0.01;
+                    const deltaY = e.touches[0].movementY * 0.01;
+                    
+                    if (gifContainer) {
+                        const currentPosition = gifContainer.getAttribute('position');
+                        gifContainer.setAttribute('position', {
+                            x: currentPosition.x + deltaX,
+                            y: currentPosition.y + deltaY,
+                            z: currentPosition.z
+                        });
+                    }
+                }
             });
-            
-            // Adicionar event listeners aos botões
-            scaleUpBtn.addEventListener('click', () => updateScale(0.2));
-            scaleDownBtn.addEventListener('click', () => updateScale(-0.2));
-            rotateBtn.addEventListener('click', updateRotation);
-            takePhotoBtn.addEventListener('click', takePhoto);
-            resetBtn.addEventListener('click', resetGif);
 
-            // Permitir arrastar o GIF pela tela
-            let isDragging = false;
-            let startPositionX = 0;
-            let startPositionY = 0;
-
-            gifPlane.addEventListener('mousedown', startDrag);
-            gifPlane.addEventListener('touchstart', startDrag, { passive: false });
-
-            function startDrag(e) {
-                isDragging = true;
-                if (e.type === 'touchstart') {
-                    startPositionX = e.touches[0].clientX;
-                    startPositionY = e.touches[0].clientY;
-                    e.preventDefault();
-                } else {
-                    startPositionX = e.clientX;
-                    startPositionY = e.clientY;
-                }
-            }
-
-            document.addEventListener('mousemove', drag);
-            document.addEventListener('touchmove', drag, { passive: false });
-
-            function drag(e) {
-                if (!isDragging) return;
+            // Adicionar evento para teclado para mover com teclas de seta
+            document.addEventListener('keydown', function(e) {
+                if (!gifContainer) return;
                 
-                let currentX, currentY;
-                if (e.type === 'touchmove') {
-                    currentX = e.touches[0].clientX;
-                    currentY = e.touches[0].clientY;
-                    e.preventDefault();
-                } else {
-                    currentX = e.clientX;
-                    currentY = e.clientY;
-                }
-
-                const deltaX = (currentX - startPositionX) * 0.01;
-                const deltaY = (currentY - startPositionY) * 0.01;
-
                 const currentPosition = gifContainer.getAttribute('position');
-                gifContainer.setAttribute('position', {
-                    x: currentPosition.x + deltaX,
-                    y: currentPosition.y,
-                    z: currentPosition.z + deltaY
-                });
-
-                startPositionX = currentX;
-                startPositionY = currentY;
-            }
-
-            document.addEventListener('mouseup', stopDrag);
-            document.addEventListener('touchend', stopDrag);
-
-            function stopDrag() {
-                isDragging = false;
-            }
+                const step = 0.1;
+                
+                switch(e.key) {
+                    case 'ArrowUp':
+                        gifContainer.setAttribute('position', {
+                            x: currentPosition.x,
+                            y: currentPosition.y + step,
+                            z: currentPosition.z
+                        });
+                        break;
+                    case 'ArrowDown':
+                        gifContainer.setAttribute('position', {
+                            x: currentPosition.x,
+                            y: currentPosition.y - step,
+                            z: currentPosition.z
+                        });
+                        break;
+                    case 'ArrowLeft':
+                        gifContainer.setAttribute('position', {
+                            x: currentPosition.x - step,
+                            y: currentPosition.y,
+                            z: currentPosition.z
+                        });
+                        break;
+                    case 'ArrowRight':
+                        gifContainer.setAttribute('position', {
+                            x: currentPosition.x + step,
+                            y: currentPosition.y,
+                            z: currentPosition.z
+                        });
+                        break;
+                }
+            });
         }
-
-        // Função para carregar script HTML2Canvas (para captura de tela)
-        function loadHTML2Canvas() {
-            const html2canvasScript = document.createElement('script');
-            html2canvasScript.src = "https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js";
-            document.body.appendChild(html2canvasScript);
-        }
-        
-        // Carregar HTML2Canvas após o clique no botão de iniciar
-        document.getElementById('startButton').addEventListener('click', loadHTML2Canvas);
     </script>
 </body>
 </html>
